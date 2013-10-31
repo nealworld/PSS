@@ -1,0 +1,245 @@
+#!/usr/bin/perl 
+use Cwd;
+use File::Find;
+use threads;
+use threads::shared; 
+
+my $scriptDir=getcwd();
+
+my $target;
+my %patternsResult = ();
+my @threadIsAlive;
+share(@threadIsAlive);
+share(%patternsResult);
+my %exceptions;
+my %summary;
+my %params = {
+				"-T" => 300, 
+				"-TN" => 0};
+
+#if( ($#ARGV + 1)%2 != 0 || ($#ARGV + 1) > 4){
+#	print "Wrong number of parameters\n";
+#	die;
+#}
+
+my $parameters = join(",",@ARGV);
+
+if ( ($#ARGV + 1) == 2 ){ 
+	if($parameters =~ /-TN?,\d+/){
+		$params{$ARGV[0]} = $ARGV[1];
+	}else{
+		print "Wrong format of parameters\n";
+		die;
+	}
+}elsif(($#ARGV + 1) >= 4 ){
+	if($parameters =~ /-TN?,\d+,-TN?,\d+/){
+		$params{$ARGV[0]} = $ARGV[1];
+		$params{$ARGV[2]} = $ARGV[3];
+	}elsif($parameters =~ /-TN?,-TN?,\d+,\d+/){
+		$params{$ARGV[0]} = $ARGV[2];
+		$params{$ARGV[1]} = $ARGV[3];
+	}else{
+		print "Wrong format of parameters\n";
+		die;
+	}
+}
+
+opendir my $dh, $scriptDir or die "Cannot open $scriptDir: $!";
+my @patterns = grep { /^[^\.]/ && -d "$scriptDir/$_"  } readdir($dh);	
+print "Patterns to be test: ", join(" ",@patterns),"\n";
+closedir $dh;
+
+if($params{"-TN"} > $#patterns){
+	$params{"-TN"} = $#patterns;
+}
+
+print $params{"-TN"},"\n";
+
+if(-e "$scriptDir"."/Summary.txt"){
+	unlink "$scriptDir"."/Summary.txt";
+}
+
+&Run("Java");
+&Run("C");
+&Run("C++");
+
+print "Target Java summary \n Total: ", $summary{"JavaTotal"}, "Execute: ", $summary{"JavaExecute"}, " Pass: ", $summary{"JavaPass"}, " Abort: ", $summary{"JavaAbort"},"\n";
+print "Target C summary \n Total: ", $summary{"CTotal"}, "Execute: ", $summary{"CExecute"}, " Pass: ", $summary{"CPass"}, " Abort: ", $summary{"CAbort"},"\n";
+print "Target C++ summary \n Total: ", $summary{"C++Total"}, "Execute: ", $summary{"C++Execute"}, " Pass: ", $summary{"C++Pass"}, " Abort: ", $summary{"C++Abort"},"\n";
+
+print "Finish Test, see the Summary log in $scriptDir"."/Summary.txt\n";
+
+open SUMMARY,">> $scriptDir"."/Summary.txt" or die "Cannot open Summary.txt $! ";
+print SUMMARY "Target Java summary \n Total: ", $summary{"JavaTotal"}, "Execute: ", $summary{"JavaExecute"}, " Pass: ", $summary{"JavaPass"}, " Abort: ", $summary{"JavaAbort"},"\n";
+print SUMMARY "Target C summary \n Total: ", $summary{"CTotal"}, "Execute: ", $summary{"CExecute"}, " Pass: ", $summary{"CPass"}, " Abort: ", $summary{"CAbort"},"\n";
+print SUMMARY "Target C++ summary \n Total: ", $summary{"C++Total"}, "Execute: ", $summary{"C++Execute"}, " Pass: ", $summary{"C++Pass"}, " Abort: ", $summary{"C++Abort"},"\n";
+close SUMMARY;
+
+
+sub executeMPRList{
+	my $currentDirName = $_[0];
+	
+	#chdir is not thread safe
+	if ( !chdir($scriptDir.'/'.$_[0]) ){
+		print "Cant change directory to $path! $! \n";
+		$threadIsAlive[$_[1]] = 0;
+		return;
+	}
+	$patternsResult{$currentDirName.$target."Pass"} = 0;
+	$patternsResult{$currentDirName.$target."Abort"} = 0;
+	$patternsResult{$currentDirName.$target."Execute"} = 0;
+	$patternsResult{$currentDirName.$target."Total"} = 0;
+	$exceptions{$currentDirName} = "";
+
+
+	print "TAT=1 TARGET=$target Test $currentDirName...\n";
+	mkdir $target."Result", 0755;
+	
+	my $mprDir = $scriptDir.'/'.$currentDirName."/TAT/mpr";
+	my $dh;
+	if(! opendir $dh, $mprDir ){
+		print "Cannot open $mprDir: $!\n";
+		$threadIsAlive[$_[1]] = 0;
+		return;
+	}
+	my @mprs = grep { /^[^\.].*\.mpr$/ && -f "$mprDir/$_"  } readdir($dh);
+	$patternsResult{$currentDirName.$target."Total"} = $#mprs + 1;
+	closedir $dh;
+	
+	open EXCEPTION, $mprDir."/exceptions.txt" ;#or print "Cannot open exceptions.txt $! \n";
+	$exceptions{$currentDirName} = <EXCEPTION>;
+	close EXCEPTION;
+	
+	foreach(@mprs){
+
+		open MPRTEST,"> $mprDir"."/mpr.list" or die "Cannot open mpr.list $! ";
+		print MPRTEST $_;
+		close MPRTEST;
+		
+		my $mprname = $_;
+		
+		print "Test $_...\n";
+		print "Build log is in $scriptDir/$currentDirName/$target"."Result/$mprname.txt\n";
+		#unlink "$scriptDir/$currentDirName/$target"."Result/$mprname.txt";
+								
+		eval {
+				#local $SIG{ALRM} = sub {
+	#								print $params{"-T"}." second time out,terminate $mprname\n";
+	#								$patternsResult{$currentDirName.$target."Abort"} += 1;
+	#								open FAILED, ">> $scriptDir"."/Summary.txt" or die "Cannot open Summary.txt $! ";
+	#								print FAILED $mprDir."/".$mprname." aborted target=$target \n";
+	#								close FAILED;
+									#$threadIsAlive[$_[1]] = 0;
+									#die;
+	#							};
+	       	#alarm $params{"-T"};
+	       	
+	       	#using cd to change the working dir, because chdir is not thread safe, 
+	       	#but i am not sure cd can work 100% correctly, though it works under my test
+        	system "cd $scriptDir/$_[0];make clean run TAT=1 TARGET=$target 2&> $scriptDir/$currentDirName/$target"."Result/$mprname.txt";	
+        	
+			
+			my $failedCount = 0;
+			my $endloop = 0;
+			#while($endloop == 0){
+				
+				if (-e $scriptDir.'/'.$currentDirName."/build/TAT/log/txtlog/TAT_Test.txt"){
+					print "Build Complete.\n";
+					&checkResult($mprname,$currentDirName);
+					$patternsResult{$currentDirName.$target."Execute"} += 1;
+			#		$endloop = 1;
+				}else{
+			#		$failedCount++;
+			#		system "cd $scriptDir/$_[0];make clean run TAT=1 TARGET=$target 2&> $scriptDir/$currentDirName/$target"."Result/$mprname.txt";
+					print "Build Failed.\n";
+					$patternsResult{$currentDirName.$target."Abort"} += 1;
+					open FAILED, ">> $scriptDir"."/Summary.txt" or die "Cannot open Summary.txt $! ";
+					print FAILED $mprDir."/".$mprname." aborted target=$target \n";
+					close FAILED;
+					#$threadIsAlive[$_[1]] = 0;
+								
+				}
+			#};
+ 			#alarm 0;
+ 			
+ 		}
+	}
+	#system "rm -r $scriptDir".'/'.$currentDirName."/build";
+	$threadIsAlive[$_[1]] = 0;
+}
+
+sub checkResult{
+	open TESTRESULT,$scriptDir.'/'.$_[1]."/build/TAT/log/txtlog/TAT_Test.txt" or die "Cannot open TAT_Test.txt $! ";
+	
+
+	while( <TESTRESULT> )
+	{
+		next unless ( /^(RMRK).*Status.*/ );
+		
+		if(/.*TAT_OK.*/s){
+			$patternsResult{$_[1].$target."Pass"} += 1;
+			print $_[0]." pass\n";
+		}elsif(index($_[0], $exceptions{$_[1]}) ){
+			$patternsResult{$_[1].$target."Pass"} += 1;
+			print $_[0]." pass\n";
+		}else{
+			open FAILED, ">> $scriptDir"."/Summary.txt" or die "Cannot open Summary.txt $! ";
+			print FAILED $scriptDir.'/'.$_[1]."/TAT/mpr/".$_[0]." failed TAT test target=$target \n";
+			close FAILED;
+		}
+		
+	}
+	close TESTRESULT; 
+}
+
+sub Run{
+	$target = $_[0];
+	#print	"Run test case one by one target in $target ...\n";
+	my $threadcount = 0;
+	my @threadarrays;
+	#my $index = 0;
+
+	foreach (@patterns){
+		my $patternName = $_;
+		if($threadcount < $params{"-TN"}+1){
+			$threadarrays[$threadcount] = threads->new( \&executeMPRList,$patternName,$threadcount);
+			$threadIsAlive[$threadcount] = 1;
+			$threadcount++;
+			
+		}else{
+			my $endloop=0;
+			while($endloop == 0 ){
+				for(my $index = 0; $index <= $#threadIsAlive; $index++){
+					if($threadIsAlive[$index] == 0){
+						$threadarrays[$index]->join();
+						$threadarrays[$index] = threads->new( \&executeMPRList,$patternName,$index);
+						$threadIsAlive[$index] = 1;
+						$endloop = 1;
+						$index = $#threadIsAlive + 1;
+					}
+				}
+				#&executeMPRList();
+				#if($index > $params{"-TN"}){
+				#	$index = 0;
+				#}
+				#$threadarrays[$index]->join(); 
+				#$threadarrays[$index] = threads->new( \&executeMPRList,$_);
+				#$index++;
+				sleep(3);
+			}
+			
+		}
+	}
+	
+	foreach(@threadarrays){
+		$_->join();
+	}
+	foreach (@patterns){
+		$summary{$target."Pass"} += $patternsResult{$_.$target."Pass"};
+		$summary{$target."Abort"} += $patternsResult{$_.$target."Abort"};
+		$summary{$target."Execute"} += $patternsResult{$_.$target."Execute"};
+		$summary{$target."Total"} += $patternsResult{$_.$target."Total"};
+	}
+	
+}
+
