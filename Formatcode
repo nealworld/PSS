@@ -1,0 +1,24 @@
+#!/usr/bin/perl 
+use Cwd;
+use File::Find;
+use File::Path;
+use threads;
+use threads::shared; 
+
+&main();
+
+sub main{
+	my $SDLpath = @ARGV[0];
+	mkpath($SDLpath."/FormatedSDL");
+	
+	opendir my $dh, $SDLpath or die "Cannot open $SDLpath: $!";
+	my @sdlfiles = grep { /^[^\.].*\.sdl$/ && -f "$SDLpath/$_"  } readdir($dh);
+	my $num = $#sdlfiles + 1;    
+	print "$num sdl files to be converted\n", join(" ",@sdlfiles),"\n";
+	closedir $dh;
+	
+	
+}
+
+
+
