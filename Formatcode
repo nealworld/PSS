@@ -5,20 +5,44 @@ use File::Path;
 use threads;
 use threads::shared; 
 
+my $SDLpath = @ARGV[0];
+mkpath($SDLpath."/FormatedSDL");
+	
 &main();
 
 sub main{
-	my $SDLpath = @ARGV[0];
-	mkpath($SDLpath."/FormatedSDL");
-	
 	opendir my $dh, $SDLpath or die "Cannot open $SDLpath: $!";
 	my @sdlfiles = grep { /^[^\.].*\.sdl$/ && -f "$SDLpath/$_"  } readdir($dh);
 	my $num = $#sdlfiles + 1;    
 	print "$num sdl files to be converted\n", join(" ",@sdlfiles),"\n";
 	closedir $dh;
 	
-	
+	foreach(@sdlfiles){
+		&formatfile($SDLpath."/".$_,$SDLpath."/FormatedSDL/".$_);
+	}
 }
+
+sub formatfile{
+	my $prefile = $_[0];
+	my $formatfile = $_[1];
+	my $space = 0;
+	open (RFILE,"< $prefile") || die( "Can not open $prefile! \n");
+	open(WFILE,">$formatfile") || die( "Can not open $formatfile! \n");  
+   
+	while(my $line = <RFILE>){
+		my @linestr = $line.split(" ");
+		foreach(@linestr){
+			print $_."\n";
+		}
+		print WFILE $line;
+		return;
+	}
+	
+	close RFILE;  
+    close WFILE;
+}
+
+
 
 
 
