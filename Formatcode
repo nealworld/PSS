@@ -5,7 +5,20 @@ use File::Path;
 use threads;
 use threads::shared; 
 
+my $insertSpace = 0;
+my $af = 0;
+my $df = 0;
+my $incompletedf = 0;
+my $wf = 0;
+my $incompletewf = 0;
+my $pf = 0;
+my $findSemicolon = 0;
+my $tempContent = "";
+my $firstSpaceNum = 0;
 my $SDLpath = @ARGV[0];
+my $tempInsertSpace = 0;
+my $incompleteComment = 0;
+my $incompleteCondition = 0;
 mkpath($SDLpath."/FormatedSDL");
 	
 &main();
@@ -18,31 +31,223 @@ sub main{
 	closedir $dh;
 	
 	foreach(@sdlfiles){
+		$insertSpace = 0;
+		$af = 0;
+		$df = 0;
+		$wf = 0;
+		$pf = 0;
+		$findSemicolon = 0;
+		$tempContent = "";
+		$incompletedf = 0;
+		$firstSpaceNum = 0;
+		$incompletewf = 0;
+		$tempInsertSpace = 0;
+		$incompleteComment = 0;
+		$incompleteCondition = 0;
 		&formatfile($SDLpath."/".$_,$SDLpath."/FormatedSDL/".$_);
 	}
 }
+sub fillContent{
+	my $i = 0;
+	while($i < $_[0]){
+		$tempContent .= " ";
+		$i++;
+	}
+	$testline = $_[1];
+	$testline =~ s/^\s*//;
+	$tempContent .= $testline;
+}
+sub calculateSpaceNum{
+#this calculation method is complex 
+#	my $pos = -1;
+#	my $spacenum = 0;
+#	while (($pos = index($_[0], " ", $pos)) > -1) {		    
+#    	if($pos != $spacenum){
+#    		last;
+#    	}
+#    	$spacenum ++;
+#    	$pos++;
+#	}
+	my $testline = $_[0];
+	my $prelen = length($testline);
+	$testline =~ s/^\s*//;
+	my $len = length($testline);
+	
+	return $prelen - $len;
+}
 
-sub formatfile{
+sub formatfile{	
 	my $prefile = $_[0];
 	my $formatfile = $_[1];
 	my $space = 0;
 	open (RFILE,"< $prefile") || die( "Can not open $prefile! \n");
-	open(WFILE,">$formatfile") || die( "Can not open $formatfile! \n");  
-   
+	open(WFILE,">$formatfile") || die( "Can not open $formatfile! \n");
+  
 	while(my $line = <RFILE>){
-		my @linestr = $line.split(" ");
-		foreach(@linestr){
-			print $_."\n";
+		if($line =~ /^\s*\/\*/ && $line !~ /\*\//){
+			$incompleteComment = 1;
+			print WFILE $line;
+			next;
+		}elsif($line !~ /\/\*/ && $line =~ /\*\// && $incompleteComment == 1){
+			$incompleteComment = 0;
+			print WFILE $line;
+			next;
 		}
-		print WFILE $line;
-		return;
+		if ($incompleteComment == 1){
+			print WFILE $line;
+			next;
+		}
+		if($line =~ /^\s*\/\*/ && $line =~ /\*\//){
+			print WFILE $line;
+			next;
+		}
+		if($line =~ /^\s*$/){
+			$pf = 1;
+			$tempContent .= $line;
+		}elsif($incompletedf == 1){
+		
+			my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNum + $insertSpace - 4;
+			if($currentSpaceNum < 0){
+				$currentSpaceNum = 0;
+			}
+			&fillContent($currentSpaceNum,$line);
+			if($line =~ /;/){
+				$incompletedf = 0;
+				$pf = 1;
+				$firstSpaceNum = 0;
+			}
+		}elsif($incompletewf == 1){
+		
+			my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNum + $insertSpace - 4;
+			if($currentSpaceNum < 0){
+				$currentSpaceNum = 0;
+			}
+			&fillContent($currentSpaceNum,$line);
+			if($line =~ /;/){
+				$incompletewf = 0;
+				$pf = 1;
+				$firstSpaceNum = 0;
+			}
+		}elsif($incompleteCondition == 1){
+			if($line !~ /^\s*\(/ && $line =~ /\):/x){
+				$incompleteCondition = 0;
+			}
+			$pf = 1;
+			&fillContent($insertSpace-4,$line);
+		}elsif($line =~ /^\s*#if/){
+			$pf = 1;
+			&fillContent(0,$line);
+			$tempInsertSpace = $insertSpace;
+		}elsif($line =~ /^\s*#else/){
+			$pf = 1;
+			&fillContent(0,$line);
+			$insertSpace = $tempInsertSpace;
+		}elsif($line =~ /^\s*#endif/){
+			$pf = 1;
+			&fillContent(0,$line);
+			$tempInsertSpace = 0;
+		}elsif($line =~ /^\s*ALTERNATIVE/){
+			$af = 1;
+			$pf = 1;
+			&fillContent($insertSpace,$line);
+			$insertSpace += 4;
+		}elsif( $line =~ /^\s*DECISION/){
+			$pf = 1;
+			if($line !~ /;/){
+				$incompletedf = 1;
+				$pf = 0;
+				$firstSpaceNum = calculateSpaceNum($line);
+			}
+			$df = 1;
+			&fillContent($insertSpace,$line);
+			$insertSpace += 4;
+		}elsif( $line =~ /^\s*WHILE/){
+			$wf = 1;
+			$pf = 1;
+			if($line !~ /;/){
+				$incompletewf = 1;
+				$pf = 0;
+				$firstSpaceNum = calculateSpaceNum($line);
+			}
+			&fillContent($insertSpace,$line);
+			$insertSpace += 4;
+		}elsif( $line =~ /ELSE:/x){
+			$pf = 1;
+			&fillContent($insertSpace-4,$line);
+		}elsif($line =~ /^\s*\(/){
+			if( $line !~ /\):/x){
+				$incompleteCondition = 1;
+			}
+			$pf = 1;
+			&fillContent($insertSpace-4,$line);
+		}elsif($line =~ /ENDALTERNATIVE;/x){
+			$af = 0;
+			$pf = 1;
+			$insertSpace -= 4;
+			&fillContent($insertSpace,$line);
+		}elsif($line =~ /ENDDECISION;/x){
+			$df = 0;
+			$pf = 1;
+			$insertSpace -= 4;
+			&fillContent($insertSpace,$line);
+		}elsif($line =~ /ENDWHILE;/x){
+			$wf = 0;
+			$pf = 1;
+			$insertSpace -= 4;
+			&fillContent($insertSpace,$line);
+		}elsif($line =~ /CONSTANT/){
+			$pf = 1;
+			&fillContent($insertSpace,$line);
+		}else{
+#			if ($incompleteComment == 1){
+#				$pf = 1;
+#				&fillContent($insertSpace,$line);
+#			}
+#			else {
+			if($line =~ /;/){
+				$pf = 1;
+				if($findSemicolon == 1){
+					my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNum + $insertSpace;
+					if($currentSpaceNum < 0){
+					print $line;
+						$currentSpaceNum = 0;
+					}
+					&fillContent($currentSpaceNum,$line);
+					$findSemicolon = 0;
+					$firstSpaceNum = 0;
+				}else{
+					&fillContent($insertSpace,$line);
+				}
+			}#elsif( $line =~ /^\s*\/\*/ || ($line !~ /\/\*/ && $line =~ /\*\//)){
+				#$pf = 1;
+				#&fillContent($insertSpace,$line);
+			#}
+			else{
+				if($findSemicolon == 0){#the first incompletet sentence 
+					$firstSpaceNum = calculateSpaceNum($line);
+					$findSemicolon = 1;
+					&fillContent($insertSpace,$line);				
+				}else{
+					my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNum + $insertSpace;
+					if($currentSpaceNum < 0){
+				
+						$currentSpaceNum = 0;
+					}
+					&fillContent($currentSpaceNum,$line);
+				}
+				$pf = 0;
+			}
+#			}
+		}
+
+		if($pf == 1){
+			print WFILE $tempContent;
+			$tempContent = "";
+			$pf = 0;
+		}
 	}
 	
 	close RFILE;  
     close WFILE;
 }
-
-
-
-
 
