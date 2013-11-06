@@ -15,6 +15,8 @@ my $pf = 0;
 my $findSemicolon = 0;
 my $tempContent = "";
 my $firstSpaceNum = 0;
+my $firstSpaceNumDs = 0;
+my $firstSpaceNumWh = 0;
 my $SDLpath = @ARGV[0];
 my $tempInsertSpace = 0;
 my $incompleteComment = 0;
@@ -40,6 +42,8 @@ sub main{
 		$tempContent = "";
 		$incompletedf = 0;
 		$firstSpaceNum = 0;
+		$firstSpaceNumWh = 0;
+		$firstSpaceNumDs = 0;
 		$incompletewf = 0;
 		$tempInsertSpace = 0;
 		$incompleteComment = 0;
@@ -84,29 +88,89 @@ sub formatfile{
 	open(WFILE,">$formatfile") || die( "Can not open $formatfile! \n");
   
 	while(my $line = <RFILE>){
-		if($line =~ /^\s*\/\*/ && $line !~ /\*\//){
-			$incompleteComment = 1;
+		if($line =~ /^\s*$/){
 			print WFILE $line;
 			next;
-		}elsif($line !~ /\/\*/ && $line =~ /\*\// && $incompleteComment == 1){
-			$incompleteComment = 0;
+		}
+		if($line =~ /^\s*#include/i){
 			print WFILE $line;
+			next;
+		}
+		if($line =~ /\/\*/ && $line !~ /\*\//){
+			$incompleteComment = 1;
+			&fillContent($insertSpace,$line);
+			print WFILE $tempContent;
+			if( $line =~ /^\s*WHILE/i){
+				$wf = 1;
+				if($line !~ /;/){
+					$incompletewf = 1;
+					$firstSpaceNumWh = calculateSpaceNum($line);
+				}
+				$insertSpace += 4;
+			}
+			$tempContent = "";
+			next;
+		}elsif($line =~ /\*\// && $incompleteComment == 1){
+			$incompleteComment = 0;
+			if(index($line,";") > index($line,"*/")){
+			
+				if($incompletedf == 1){
+					my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNumDs + $insertSpace - 4;
+					if($currentSpaceNum < 0){
+						$currentSpaceNum = 0;
+					}
+					&fillContent($currentSpaceNum,$line);
+					$incompletedf = 0;
+					print WFILE $tempContent;
+					$tempContent = "";
+					$firstSpaceNumDs = 0;
+				}
+				if($incompletewf == 1){
+					my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNumWh + $insertSpace - 4;
+					if($currentSpaceNum < 0){
+						$currentSpaceNum = 0;
+					}
+					&fillContent($currentSpaceNum,$line);
+					$incompletewf = 0;
+					print WFILE $tempContent;
+					$tempContent = "";
+					$firstSpaceNumWh = 0;
+				}
+				if($findSemicolon == 1){
+					my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNum + $insertSpace;
+					if($currentSpaceNum < 0){
+						$currentSpaceNum = 0;
+					}
+					&fillContent($currentSpaceNum,$line);
+					$findSemicolon = 0;
+					$firstSpaceNum = 0;
+					print WFILE $tempContent;
+					$tempContent = "";
+				}
+			}else{
+			
+				&fillContent($insertSpace,$line);
+				print WFILE $tempContent;
+				$tempContent = "";
+			}
+			
 			next;
 		}
 		if ($incompleteComment == 1){
-			print WFILE $line;
+			&fillContent($insertSpace,$line);
+			print WFILE $tempContent;
+			$tempContent = "";
 			next;
 		}
 		if($line =~ /^\s*\/\*/ && $line =~ /\*\//){
-			print WFILE $line;
+			&fillContent($insertSpace,$line);
+			print WFILE $tempContent;
+			$tempContent = "";
 			next;
 		}
-		if($line =~ /^\s*$/){
-			$pf = 1;
-			$tempContent .= $line;
-		}elsif($incompletedf == 1){
+		if($incompletedf == 1){
 		
-			my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNum + $insertSpace - 4;
+			my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNumDs + $insertSpace - 4;
 			if($currentSpaceNum < 0){
 				$currentSpaceNum = 0;
 			}
@@ -114,11 +178,11 @@ sub formatfile{
 			if($line =~ /;/){
 				$incompletedf = 0;
 				$pf = 1;
-				$firstSpaceNum = 0;
+				$firstSpaceNumDs = 0;
 			}
 		}elsif($incompletewf == 1){
 		
-			my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNum + $insertSpace - 4;
+			my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNumWh + $insertSpace - 4;
 			if($currentSpaceNum < 0){
 				$currentSpaceNum = 0;
 			}
@@ -126,10 +190,10 @@ sub formatfile{
 			if($line =~ /;/){
 				$incompletewf = 0;
 				$pf = 1;
-				$firstSpaceNum = 0;
+				$firstSpaceNumWh = 0;
 			}
 		}elsif($incompleteCondition == 1){
-			if($line !~ /^\s*\(/ && $line =~ /\):/x){
+			if($line !~ /^\s*\(/ && $line =~ /\)\s*:/){
 				$incompleteCondition = 0;
 			}
 			$pf = 1;
@@ -156,41 +220,41 @@ sub formatfile{
 			if($line !~ /;/){
 				$incompletedf = 1;
 				$pf = 0;
-				$firstSpaceNum = calculateSpaceNum($line);
+				$firstSpaceNumDs = calculateSpaceNum($line);
 			}
 			$df = 1;
 			&fillContent($insertSpace,$line);
 			$insertSpace += 4;
-		}elsif( $line =~ /^\s*WHILE/){
+		}elsif( $line =~ /^\s*WHILE/i){
 			$wf = 1;
 			$pf = 1;
 			if($line !~ /;/){
 				$incompletewf = 1;
 				$pf = 0;
-				$firstSpaceNum = calculateSpaceNum($line);
+				$firstSpaceNumWh = calculateSpaceNum($line);
 			}
 			&fillContent($insertSpace,$line);
 			$insertSpace += 4;
-		}elsif( $line =~ /ELSE:/x){
+		}elsif( $line =~ /ELSE\s*:/){
 			$pf = 1;
 			&fillContent($insertSpace-4,$line);
-		}elsif($line =~ /^\s*\(/){
-			if( $line !~ /\):/x){
+		}elsif($line =~ /^\s*\(/ && $findSemicolon == 0){
+			if( $line !~ /\)\s*:/){
 				$incompleteCondition = 1;
 			}
 			$pf = 1;
 			&fillContent($insertSpace-4,$line);
-		}elsif($line =~ /ENDALTERNATIVE;/x){
+		}elsif($line =~ /ENDALTERNATIVE\s*;/){
 			$af = 0;
 			$pf = 1;
 			$insertSpace -= 4;
 			&fillContent($insertSpace,$line);
-		}elsif($line =~ /ENDDECISION;/x){
+		}elsif($line =~ /ENDDECISION\s*;/){
 			$df = 0;
 			$pf = 1;
 			$insertSpace -= 4;
 			&fillContent($insertSpace,$line);
-		}elsif($line =~ /ENDWHILE;/x){
+		}elsif($line =~ /ENDWHILE\s*;/){
 			$wf = 0;
 			$pf = 1;
 			$insertSpace -= 4;
@@ -199,17 +263,19 @@ sub formatfile{
 			$pf = 1;
 			&fillContent($insertSpace,$line);
 		}else{
-#			if ($incompleteComment == 1){
-#				$pf = 1;
-#				&fillContent($insertSpace,$line);
-#			}
-#			else {
+			my $sf = 0;
 			if($line =~ /;/){
+				if( $line =~ /\/\*/ && index($line,";") > index($line,"/*")){
+					$sf = 0; 
+				}else{
+					$sf = 1;
+				}
+			}
+			if($sf == 1){
 				$pf = 1;
 				if($findSemicolon == 1){
 					my $currentSpaceNum = calculateSpaceNum($line) - $firstSpaceNum + $insertSpace;
 					if($currentSpaceNum < 0){
-					print $line;
 						$currentSpaceNum = 0;
 					}
 					&fillContent($currentSpaceNum,$line);
@@ -218,11 +284,7 @@ sub formatfile{
 				}else{
 					&fillContent($insertSpace,$line);
 				}
-			}#elsif( $line =~ /^\s*\/\*/ || ($line !~ /\/\*/ && $line =~ /\*\//)){
-				#$pf = 1;
-				#&fillContent($insertSpace,$line);
-			#}
-			else{
+			}else{
 				if($findSemicolon == 0){#the first incompletet sentence 
 					$firstSpaceNum = calculateSpaceNum($line);
 					$findSemicolon = 1;
@@ -237,7 +299,6 @@ sub formatfile{
 				}
 				$pf = 0;
 			}
-#			}
 		}
 
 		if($pf == 1){
