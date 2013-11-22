@@ -4,6 +4,25 @@ use File::Find;
 use File::Path;
 use threads;
 use threads::shared; 
+use Getopt::Std;
+
+my $usage= <<'USAGES';
+Usage: Formatcode [options] Directory
+  This tool helps you format the sdl files. It is focus on WHILE, DECISION and ALTERNATIVE.
+  options:
+  -h     Display this help text
+  -r     Find the sdl files in the sub folders 
+USAGES
+
+my %options=();
+getopts("hpd",\%options) or die $usage;
+
+#print only the 
+die $usage if defined  $options{h};
+
+
+
+
 
 my $insertSpace = 0;
 my $af = 0;
@@ -17,21 +36,28 @@ my $tempContent = "";
 my $firstSpaceNum = 0;
 my $firstSpaceNumDs = 0;
 my $firstSpaceNumWh = 0;
-my $SDLpath = @ARGV[0];
 my $tempInsertSpace = 0;
 my $incompleteComment = 0;
 my $incompleteCondition = 0;
-mkpath($SDLpath."/FormatedSDL");
 	
 &main();
 
 sub main{
-	opendir my $dh, $SDLpath or die "Cannot open $SDLpath: $!";
-	my @sdlfiles = grep { /^[^\.].*\.sdl$/ && -f "$SDLpath/$_"  } readdir($dh);
-	my $num = $#sdlfiles + 1;    
-	print "$num sdl files to be converted\n", join(" ",@sdlfiles),"\n";
+	my $SDLpath = @ARGV[0];
+	&start($SDLpath);
+}
+
+sub start{
+	my $path = $_[0];
+	opendir my $dh, $_[0] or die "Cannot open $path: $!";
+	my @sdlfiles = grep { /^[^\.].*\.sdl$/ && -f "$path/$_"  } readdir($dh);
+	my $num = $#sdlfiles + 1;
+	if($num < 1){
+		return;
+	}    
+	print "$num sdl files to be converted in $path\n", join(" ",@sdlfiles),"\n";
+	mkpath($path."/FormatedSDL");
 	closedir $dh;
-	
 	foreach(@sdlfiles){
 		$insertSpace = 0;
 		$af = 0;
@@ -48,7 +74,17 @@ sub main{
 		$tempInsertSpace = 0;
 		$incompleteComment = 0;
 		$incompleteCondition = 0;
-		&formatfile($SDLpath."/".$_,$SDLpath."/FormatedSDL/".$_);
+		&formatfile($path."/".$_,$path."/FormatedSDL/".$_);
+	}
+	
+	opendir my $dh2, $_[0] or die "Cannot open $path: $!";
+	my @dirs = grep { (! /FormatedSDL/) && -d "$path/$_"  } readdir($dh2);
+	closedir $dh2;
+	if($#dirs >= 0){
+		foreach(@dirs){
+			next if $_ =~ m/^\./;
+			start($path."/".$_);
+		}
 	}
 }
 sub fillContent{
