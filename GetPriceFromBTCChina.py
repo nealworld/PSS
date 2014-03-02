@@ -7,13 +7,11 @@ import datetime
 def getLastPrice():
 	while(True):
 		try:
-			page = requests.get('https://vip.btcchina.com/')
-			tree = html.fromstring(page.text)
+			page = requests.get('https://data.btcchina.com/data/ticker')
 		except:
 			print("a exception happened!")
 		else:	
-			price = tree.xpath('//span[@id="last"]/text()')
-			return float(price[0].replace(',',''))
+			return float((page.text.split(',')[4]).split(':')[1].split('"')[1])
 
 def start():
 	while(True):
